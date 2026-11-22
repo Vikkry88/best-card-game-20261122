@@ -1,53 +1,66 @@
-// Keyboard and pointer input. Held keys give a steering direction; one-shot presses (start or
-// restart, pause) are queued as bit flags and taken once by the loop, so a press between two
-// frames is never lost and never counted twice.
+// Keyboard and pointer input for the duel: number keys pick cards, Enter strikes,
+// E ends the turn, arrows move a focus ring. Pointer presses queue as coordinates
+// so the main loop can hit-test them against the renderer's layout.
 
 export const ACTION_CONFIRM = 1;
-export const ACTION_PAUSE = 2;
+export const ACTION_END_TURN = 2;
+export const ACTION_PAUSE = 4;
+export const ACTION_RESTART = 8;
 
-const LEFT = new Set(['ArrowLeft', 'KeyA']);
-const RIGHT = new Set(['ArrowRight', 'KeyD']);
-const CONFIRM = new Set(['Space', 'Enter']);
-const PAUSE = new Set(['KeyP', 'Escape']);
+const CONFIRM_KEYS = new Set(['Space', 'Enter']);
+const END_KEYS = new Set(['KeyE']);
+const PAUSE_KEYS = new Set(['KeyP', 'Escape']);
+const RESTART_KEYS = new Set(['KeyR']);
+const DIGIT_KEYS = ['Digit1', 'Digit2', 'Digit3', 'Digit4', 'Digit5'];
 
 export function createInput(target) {
-  let left = false;
-  let right = false;
   let actions = 0;
+  let digit = -1;
+  let focusMove = 0;
+  const pointers = [];
 
   window.addEventListener('keydown', (event) => {
-    if (LEFT.has(event.code)) left = true;
-    else if (RIGHT.has(event.code)) right = true;
-    else if (CONFIRM.has(event.code)) {
+    const digitIndex = DIGIT_KEYS.indexOf(event.code);
+    if (digitIndex !== -1) {
+      if (!event.repeat) digit = digitIndex;
+    } else if (event.code === 'ArrowLeft' || event.code === 'KeyA') {
+      if (!event.repeat) focusMove -= 1;
+    } else if (event.code === 'ArrowRight' || event.code === 'KeyD') {
+      if (!event.repeat) focusMove += 1;
+    } else if (CONFIRM_KEYS.has(event.code)) {
       if (!event.repeat) actions |= ACTION_CONFIRM;
-    } else if (PAUSE.has(event.code)) {
+    } else if (END_KEYS.has(event.code)) {
+      if (!event.repeat) actions |= ACTION_END_TURN;
+    } else if (PAUSE_KEYS.has(event.code)) {
       if (!event.repeat) actions |= ACTION_PAUSE;
+    } else if (RESTART_KEYS.has(event.code)) {
+      if (!event.repeat) actions |= ACTION_RESTART;
     } else return;
     event.preventDefault();
   });
-  window.addEventListener('keyup', (event) => {
-    if (LEFT.has(event.code)) left = false;
-    else if (RIGHT.has(event.code)) right = false;
-  });
-  // A key released while the tab is hidden never sends keyup: let go of everything on blur.
-  window.addEventListener('blur', () => {
-    left = false;
-    right = false;
-  });
-  target.addEventListener('pointerdown', () => {
-    actions |= ACTION_CONFIRM;
+
+  target.addEventListener('pointerdown', (event) => {
+    pointers.push({ x: event.clientX, y: event.clientY });
   });
 
   return {
-    /** -1 for left, 1 for right, 0 for neither or both. */
-    direction() {
-      return (right ? 1 : 0) - (left ? 1 : 0);
-    },
-    /** The one-shot presses since the last call, as ACTION_* flags. */
     takeActions() {
       const taken = actions;
       actions = 0;
       return taken;
+    },
+    takeDigit() {
+      const taken = digit;
+      digit = -1;
+      return taken;
+    },
+    takeFocusMove() {
+      const taken = focusMove;
+      focusMove = 0;
+      return taken;
+    },
+    takePointers() {
+      return pointers.splice(0, pointers.length);
     },
   };
 }
